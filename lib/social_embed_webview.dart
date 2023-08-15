@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 class SocialEmbed extends StatefulWidget {
   final SocialMediaGenericEmbedData socialMediaObj;
   final Color? backgroundColor;
+
   const SocialEmbed(
       {Key? key, required this.socialMediaObj, this.backgroundColor})
       : super(key: key);
@@ -27,13 +28,44 @@ class _SocialEmbedState extends State<SocialEmbed> with WidgetsBindingObserver {
     super.initState();
     // htmlBody = ;
     if (widget.socialMediaObj.supportMediaControll)
-      WidgetsBinding.instance!.addObserver(this);
+      WidgetsBinding.instance.addObserver(this);
+
+    wbController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (int progress) {
+            // Update loading bar.
+          },
+          onPageStarted: (String url) {},
+          onPageFinished: (String url) {
+            final color = colorToHtmlRGBA(getBackgroundColor(context));
+            wbController.runJavaScript(
+                'document.body.style= "background-color: $color"');
+            if (widget.socialMediaObj.aspectRatio == null)
+              wbController.runJavaScript('setTimeout(() => sendHeight(), 0)');
+          },
+          onWebResourceError: (WebResourceError error) {},
+          onNavigationRequest: (NavigationRequest request) async {
+            final url = request.url;
+            if (request.isMainFrame && await canLaunch(url)) {
+              launch(url);
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      );
+    wbController.addJavaScriptChannel('PageHeight',
+        onMessageReceived: (message) {
+      _setHeight(double.parse(message.message));
+    });
   }
 
   @override
   void dispose() {
     if (widget.socialMediaObj.supportMediaControll)
-      WidgetsBinding.instance!.removeObserver(this);
+      WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -43,42 +75,18 @@ class _SocialEmbedState extends State<SocialEmbed> with WidgetsBindingObserver {
       case AppLifecycleState.resumed:
         break;
       case AppLifecycleState.detached:
-        wbController.evaluateJavascript(widget.socialMediaObj.stopVideoScript);
+        wbController.runJavaScript(widget.socialMediaObj.stopVideoScript);
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
-        wbController.evaluateJavascript(widget.socialMediaObj.pauseVideoScript);
+        wbController.runJavaScript(widget.socialMediaObj.pauseVideoScript);
         break;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final wv = WebView(
-        initialUrl: htmlToURI(getHtmlBody()),
-        javascriptChannels:
-            <JavascriptChannel>[_getHeightJavascriptChannel()].toSet(),
-        javascriptMode: JavascriptMode.unrestricted,
-        initialMediaPlaybackPolicy: AutoMediaPlaybackPolicy.always_allow,
-        onWebViewCreated: (wbc) {
-          wbController = wbc;
-        },
-        onPageFinished: (str) {
-          final color = colorToHtmlRGBA(getBackgroundColor(context));
-          wbController.evaluateJavascript(
-              'document.body.style= "background-color: $color"');
-          if (widget.socialMediaObj.aspectRatio == null)
-            wbController
-                .evaluateJavascript('setTimeout(() => sendHeight(), 0)');
-        },
-        navigationDelegate: (navigation) async {
-          final url = navigation.url;
-          if (navigation.isForMainFrame && await canLaunch(url)) {
-            launch(url);
-            return NavigationDecision.prevent;
-          }
-          return NavigationDecision.navigate;
-        });
+    final wv = WebViewWidget(controller: wbController);
     final ar = widget.socialMediaObj.aspectRatio;
     return (ar != null)
         ? ConstrainedBox(
@@ -89,14 +97,6 @@ class _SocialEmbedState extends State<SocialEmbed> with WidgetsBindingObserver {
             child: AspectRatio(aspectRatio: ar, child: wv),
           )
         : SizedBox(height: _height, child: wv);
-  }
-
-  JavascriptChannel _getHeightJavascriptChannel() {
-    return JavascriptChannel(
-        name: 'PageHeight',
-        onMessageReceived: (JavascriptMessage message) {
-          _setHeight(double.parse(message.message));
-        });
   }
 
   void _setHeight(double height) {
