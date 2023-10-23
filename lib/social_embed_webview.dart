@@ -79,6 +79,7 @@ class _SocialEmbedState extends State<SocialEmbed> with WidgetsBindingObserver {
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
         wbController.runJavaScript(widget.socialMediaObj.pauseVideoScript);
         break;
     }
